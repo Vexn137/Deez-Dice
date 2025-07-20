@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Deez & Dice</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #121212;
+      color: #fff;
+      margin: 0;
+      height: 100vh;
+      display: flex;
+    }
+
+    .sidebar {
+      background: #1a1a1a;
+      border-right: 2px solid #333;
+      padding: 15px;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .left-sidebar {
+      width: 220px;
+    }
+
+    .right-sidebar {
+      width: 300px;
+      border-left: 2px solid #333;
+    }
+
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+      overflow-y: auto;
+    }
+
+
+    .user-list {
+      list-style: none;
+      padding: 0;
+      margin: 10px 0 0 0;
+    }
+
+    .user-list li {
+      padding: 6px 0;
+      border-bottom: 1px solid #333;
+    }
+
+    .controls, .dice-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 10px 0;
+    }
+
+    input {
+      padding: 10px;
+      font-size: 16px;
+      border-radius: 8px;
+      border: none;
+      width: 200px;
+    }
+
+    button {
+      background: #1f1f1f;
+      color: #fff;
+      border: 2px solid #333;
+      padding: 10px 20px;
+      border-radius: 10px;
+      font-size: 18px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+
+    button:hover {
+      background: #2a2a2a;
+    }
+
+    .result {
+      font-size: 80px;
+      font-weight: bold;
+      animation: roll 1s ease-out;
+    }
+
+    .log {
+      margin-top: 20px;
+      width: 100%;
+      max-width: 400px;
+      background: #1e1e1e;
+      padding: 15px;
+      border-radius: 12px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    .log-entry {
+      border-bottom: 1px solid #333;
+      padding: 8px 0;
+    }
+
+    @keyframes roll {
+      0% { transform: rotate(0deg) scale(1); opacity: 0.2; }
+      50% { transform: rotate(180deg) scale(1.2); opacity: 1; }
+      100% { transform: rotate(360deg) scale(1); opacity: 1; }
+    }
+
+    #contextMenu button {
+      display: block;
+      width: 100%;
+      background: none;
+      border: none;
+      color: white;
+      padding: 10px;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    #contextMenu button:hover {
+      background-color: #333;
+    }
+
+  </style>
+</head>
+<body>
+  <body>
+  <div class="sidebar left-sidebar">
+    <h3>Join Room</h3>
+    <input id="nameInput" placeholder="Enter your name" />
+    <input id="roomCodeInput" placeholder="Enter room code" />
+    <button onclick="joinRoom()">Join Room</button>
+
+    <h3>Players</h3>
+    <ul class="user-list" id="userList"></ul>
+
+    <div id="contextMenu" style="display:none; position: absolute; background:#1e1e1e; border:1px solid #444; border-radius:5px; z-index:1000;">
+      <button onclick="kickPlayer()">Kick Player</button>
+      <button onclick="requestRoll()">Request Roll</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <h1>D&D Dice Roller</h1>
+
+    <div class="dice-buttons">
+      <button onclick="rollDice(4)">D4</button>
+      <button onclick="rollDice(6)">D6</button>
+      <button onclick="rollDice(8)">D8</button>
+      <button onclick="rollDice(10)">D10</button>
+      <button onclick="rollDice(12)">D12</button>
+      <button onclick="rollDice(20)">D20</button>
+      <button onclick="rollDice(100)">D100</button>
+    </div>
+
+    <button onclick="toggleMap()" style="margin-top: 20px;">🗺️ Open Map</button>
+
+    <div id="mapContainer" style="display: none; margin-top: 20px;">
+      <h3>Shared Map</h3>
+      <div id="map" style="
+        display: grid;
+        grid-template-columns: repeat(10, 40px);
+        grid-auto-rows: 40px;
+        gap: 2px;
+        width: fit-content;
+        background-color: #f0f0f0;
+        padding: 5px;
+        border: 1px solid #aaa;
+      "></div>
+      <button id="resetMapBtn" onclick="resetMap()" style="margin-top: 10px; display: none;">🔄 Reset Map</button>
+    </div>
+
+    <div id="dmControls" style="display:none; margin-top: 20px;">
+      <h3>Room Settings</h3>
+      <label>
+        <input type="checkbox" id="lockToggle" onchange="toggleLock()" />
+        🔒 Lock Room (prevent joins)
+      </label><br/>
+      <label>
+        <input type="checkbox" id="rollToggle" onchange="toggleFreeRoll()" checked />
+        🎲 Allow Free Rolls
+      </label>
+    </div>
+
+    <div id="result" class="result">🎲</div>
+  </div>
+
+  <div class="sidebar right-sidebar">
+    <div class="chat-section">
+      <h3>Chat & Log</h3>
+      <div class="log" id="log"></div>
+      <div style="margin-top:10px;">
+        <input id="chatInput" placeholder="Type a message..." style="width:70%; padding:5px;" />
+        <button onclick="sendChat()" style="padding:5px;">Send</button>
+      </div>
+    </div>
+  </div>
+</body>
+
+
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script>
+    const socket = io('https://7701e561-e456-4dfb-b3e8-e80fd0260e39-00-1xiq9tgdxq8tc.janeway.replit.dev/');
+    let currentRoom = '';
+    let playerName = '';
+
+    function getColorFromId(id) {
+      const colors = ['#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#46f0f0'];
+      let sum = 0;
+      for (let i = 0; i < id.length; i++) sum += id.charCodeAt(i);
+      return colors[sum % colors.length];
+    }
+
+    function joinRoom() {
+      const nameInput = document.getElementById('nameInput');
+      const roomInput = document.getElementById('roomCodeInput');
+      playerName = nameInput.value.trim();
+      const roomCode = roomInput.value.trim();
+
+      if (!playerName || !roomCode) {
+        alert("Please enter your name and room code!");
+        return;
+      }
+
+      currentRoom = roomCode;
+      socket.emit('join_room', { roomCode, name: playerName });
+      document.getElementById('log').innerHTML = '';
+    }
+
+    function rollDice(sides) {
+      if (!currentRoom || !playerName) {
+        alert("Join a room with your name first!");
+        return;
+      }
+
+      const resultDiv = document.getElementById('result');
+      let count = 0;
+
+      const interval = setInterval(() => {
+        const roll = Math.floor(Math.random() * sides) + 1;
+        resultDiv.textContent = roll;
+        resultDiv.style.animation = 'none';
+        resultDiv.offsetHeight;
+        resultDiv.style.animation = '';
+        count++;
+        if (count > 10) {
+          clearInterval(interval);
+          const finalRoll = Math.floor(Math.random() * sides) + 1;
+          resultDiv.textContent = finalRoll;
+
+          socket.emit('roll_dice', {
+            roomCode: currentRoom,
+            name: playerName,
+            sides: sides,
+            result: finalRoll
+          });
+        }
+      }, 70);
+    }
+
+    function addLogEntry({ name, sides, result, timestamp }) {
+      const log = document.getElementById('log');
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      const time = new Date(timestamp).toLocaleTimeString();
+      entry.textContent = `[${time}] ${name} rolled D${sides}: ${result}`;
+      log.appendChild(entry);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function showDMControlsIfDM() {
+      const panel = document.getElementById('dmControls');
+      panel.style.display = isDM ? 'block' : 'none';
+
+      const resetBtn = document.getElementById('resetMapBtn');
+      if (resetBtn) {
+        resetBtn.style.display = isDM ? 'inline-block' : 'none';
+      }
+    }
+
+
+    socket.on('new_roll', (entry) => {
+      const div = document.createElement('div');
+      div.innerHTML = `<strong>${entry.name}</strong> rolled a D${entry.sides} and got <strong>${entry.result}</strong>`;
+      document.getElementById('log').appendChild(div);
+
+      updatePlayerStatus(entry.name, `🎲 D${entry.sides} → ${entry.result}`);
+    });
+
+    socket.on('init_log', (entries) => {
+      entries.forEach(addLogEntry);
+    });
+    let localSocketId = null;
+    let isDM = false;
+    let clickedPlayerId = null;
+
+    // Identify local socket ID after connection
+    socket.on("connect", () => {
+      localSocketId = socket.id;
+    });
+
+    socket.on('update_users', (userList) => {
+      const list = document.getElementById('userList');
+      list.innerHTML = '';
+
+      isDM = !!userList.find(user => user.id === localSocketId && user.isDM);
+
+      userList.forEach(({ name, isDM: userIsDM, id }) => {
+        const li = document.createElement('li');
+        li.setAttribute('data-id', id); // 🔹 Store user ID in DOM
+        li.innerHTML = `
+          <div><strong>${userIsDM ? `${name} (DM)` : name}</strong></div>
+          <div class="status" style="font-size: 0.8em; color: #888;"></div>
+        `;
+
+        if (isDM && id !== localSocketId) {
+          li.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            clickedPlayerId = id;
+            showContextMenu(e.pageX, e.pageY);
+          });
+        }
+
+        list.appendChild(li);
+      });
+
+      isDM = !!userList.find(u => u.id === localSocketId && u.isDM);
+      showDMControlsIfDM();
+    });
+
+    function updatePlayerStatus(playerName, message) {
+      const userListItems = document.querySelectorAll('#userList li');
+      userListItems.forEach(li => {
+        const nameText = li.textContent;
+        if (nameText.includes(playerName)) {
+          const statusDiv = li.querySelector('.status');
+          if (statusDiv) {
+            statusDiv.textContent = message;
+
+            // Optional: fade out after 10 seconds
+            clearTimeout(statusDiv._timeout);
+            statusDiv._timeout = setTimeout(() => {
+              statusDiv.textContent = '';
+            }, 10000);
+          }
+        }
+      });
+    }
+
+
+    function showContextMenu(x, y) {
+      const menu = document.getElementById('contextMenu');
+      menu.style.left = `${x}px`;
+      menu.style.top = `${y}px`;
+      menu.style.display = 'block';
+    }
+
+    function hideContextMenu() {
+      document.getElementById('contextMenu').style.display = 'none';
+    }
+
+    window.addEventListener('click', () => hideContextMenu());
+
+    function kickPlayer() {
+      if (!clickedPlayerId) return;
+      socket.emit('kick_player', { roomCode: currentRoom, targetId: clickedPlayerId });
+      hideContextMenu();
+    }
+
+    function requestRoll() {
+      if (!clickedPlayerId) return;
+      const dice = prompt("Ask to roll which die? (e.g., 20 for D20)");
+      if (dice) {
+        socket.emit('request_roll', {
+          roomCode: currentRoom,
+          targetId: clickedPlayerId,
+          dice: parseInt(dice)
+        });
+      }
+      hideContextMenu();
+    }
+
+    // Handle being kicked
+    socket.on('kicked', () => {
+      alert("You were kicked by the DM.");
+      window.location.reload();
+    });
+
+    // Handle roll requests
+    socket.on('roll_request', ({ dice }) => {
+      if (!confirm(`The DM is asking you to roll a D${dice}. Proceed?`)) return;
+
+      const result = Math.floor(Math.random() * dice) + 1;
+      socket.emit('roll_dice', {
+        roomCode: currentRoom,
+        name: playerName,
+        sides: dice,
+        result: result
+      });
+    });
+
+    let currentSettings = {
+      locked: false,
+      allowFreeRoll: true,
+    };
+
+    function toggleLock() {
+      currentSettings.locked = document.getElementById('lockToggle').checked;
+      updateRoomSettings();
+    }
+
+    function toggleFreeRoll() {
+      currentSettings.allowFreeRoll = document.getElementById('rollToggle').checked;
+      updateRoomSettings();
+    }
+
+    function updateRoomSettings() {
+      socket.emit('update_settings', {
+        roomCode: currentRoom,
+        settings: currentSettings
+      });
+    }
+
+    socket.on('room_settings', (settings) => {
+      currentSettings = settings;
+      document.getElementById('lockToggle').checked = settings.locked;
+      document.getElementById('rollToggle').checked = settings.allowFreeRoll;
+
+      showDMControlsIfDM();
+    });
+
+    function showDMControlsIfDM() {
+      const panel = document.getElementById('dmControls');
+      panel.style.display = isDM ? 'block' : 'none';
+    }
+
+
+    socket.on('room_closed', () => {
+      alert("This room is locked. You can't join.");
+    });
+
+    socket.on('roll_blocked', () => {
+      alert("Free rolls are disabled. Wait for the DM to request a roll.");
+    });
+
+    function sendChat() {
+      const input = document.getElementById('chatInput');
+      const message = input.value.trim();
+      if (!message) return;
+
+      socket.emit('chat_message', {
+        roomCode: currentRoom,
+        name: playerName,
+        message
+      });
+
+      input.value = '';
+    }
+
+    socket.on('new_chat', (entry) => {
+      const div = document.createElement('div');
+      div.innerHTML = `<strong>${entry.name}:</strong> ${entry.message}`;
+      document.getElementById('log').appendChild(div);
+
+      updatePlayerStatus(entry.name, `💬 "${entry.message}"`);
+    });
+
+
+    // When history is loaded
+    socket.on('init_log', (log) => {
+      const logDiv = document.getElementById('log');
+      logDiv.innerHTML = '';
+      log.forEach(entry => {
+        const div = document.createElement('div');
+        if (entry.isChat) {
+          div.innerHTML = `<strong>${entry.name}:</strong> ${entry.message}`;
+        } else {
+          div.innerHTML = `<strong>${entry.name}</strong> rolled a D${entry.sides} and got <strong>${entry.result}</strong>`;
+        }
+        logDiv.appendChild(div);
+      });
+    });
+
+    function toggleMap() {
+      const container = document.getElementById('mapContainer');
+      const showing = container.style.display === 'block';
+      container.style.display = showing ? 'none' : 'block';
+
+      if (!showing) {
+        socket.emit('request_map', currentRoom); // 🔄 Ask server to re-send map
+      }
+    }
+
+
+    function resetMap() {
+      if (isDM) {
+        socket.emit('reset_map', currentRoom);
+      }
+    }
+
+    // Create the grid
+    function drawMap(tokens = {}) {
+      const map = document.getElementById('map');
+      map.innerHTML = '';
+      const size = 10;
+
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          const cell = document.createElement('div');
+          cell.style.width = '40px';
+          cell.style.height = '40px';
+          cell.style.border = '1px solid #ccc';
+          cell.style.position = 'relative';
+          cell.style.cursor = 'pointer';
+
+          // Check if any token is here
+          for (let id in tokens) {
+            const token = tokens[id];
+            if (token.x === x && token.y === y) {
+              const dot = document.createElement('div');
+              dot.style.width = '30px';
+              dot.style.height = '30px';
+              dot.style.borderRadius = '50%';
+              dot.style.background = token.color;
+              dot.style.position = 'absolute';
+              dot.style.top = '5px';
+              dot.style.left = '5px';
+              dot.title = token.name;
+              cell.appendChild(dot);
+            }
+          }
+
+          cell.addEventListener('click', () => {
+            socket.emit('move_token', { roomCode: currentRoom, x, y });
+          });
+
+          map.appendChild(cell);
+        }
+      }
+
+      if (isDM) {
+        document.getElementById('resetMapBtn').style.display = 'inline-block';
+      } else {
+        document.getElementById('resetMapBtn').style.display = 'none';
+      }
+    }
+
+    socket.on('update_map', (tokens) => {
+      drawMap(tokens);
+    });
+
+  </script>
+</body>
+</html>
